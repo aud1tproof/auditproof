@@ -9,9 +9,9 @@ local Settings = Load("core/Settings.lua")
 local Utils     = Load("core/Utils.lua")
 local Drawing   = Load("core/Drawing.lua")
 
--- Game detection → load the right module
+-- Game detection
 local GameModules = {
-    ["[🎃] Bad Business | FPS"] = "games/BadBusiness.lua",
+    ["[🎃] Bad Business | FPS "] = "games/BadBusiness.lua", -- why in the flying fuck is there a space at the end of the game's name
 }
 
 local GameName = game:GetService("MarketplaceService"):GetProductInfo(game.PlaceId).Name
