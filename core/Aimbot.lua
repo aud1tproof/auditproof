@@ -8,7 +8,7 @@ local Camera         = workspace.CurrentCamera
 
 -- // config
 local AIMBOT = {
-    Enabled          = false,
+    Enabled          = true,
     Key              = Enum.KeyCode.Q,
     TeamCheck        = true,
     VisibleCheck     = true,
