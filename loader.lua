@@ -8,6 +8,7 @@ end
 local Settings = Load("core/Settings.lua")
 local Utils     = Load("core/Utils.lua")
 local Drawing   = Load("core/Drawing.lua")
+local Aimbot   = Load("core/Aimbot.lua")
 
 -- Game detection
 local GameModules = {
