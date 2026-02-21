@@ -15,8 +15,8 @@ local AIMBOT_ENABLED = true               -- toggle with key or UI later
 local AIM_KEY = Enum.KeyCode.Q            -- hold to aim (changed to Q)
 local SMOOTHNESS = 0.55                   -- 0.1 = instant snap, 1 = very slow
 local FOV_RADIUS = 150                    -- pixels, larger = easier to acquire
-local TEAM_CHECK = true
-local WALL_CHECK = true                   -- basic raycast visibility
+local TEAM_CHECK = false
+local WALL_CHECK = false                   -- basic raycast visibility
 
 -- Globals
 local CurrentTarget = nil
@@ -102,13 +102,4 @@ RunService.RenderStepped:Connect(function(delta)
         CurrentTarget = nil
     end
 end)
-
--- Optional: toggle with insert key or whatever
-UserInputService.InputBegan:Connect(function(input)
-    if input.KeyCode == Enum.KeyCode.Insert then
-        AIMBOT_ENABLED = not AIMBOT_ENABLED
-        print("PrimaryAimbot " .. (AIMBOT_ENABLED and "ON" or "OFF"))
-    end
-end)
-
-print("[auditproof] PrimaryPart Aimbot loaded (mousemoverel) - hold Q / toggle with Insert")
+print("[auditproof] PrimaryPart Aimbot loaded (mousemoverel) - hold Q / toggle")
