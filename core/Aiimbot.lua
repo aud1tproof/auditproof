@@ -130,3 +130,5 @@ end)
 game:GetService("Players").LocalPlayer.CharacterRemoving:Connect(function()
     FOVCircle.Visible = false
 end)
+
+getgenv().HubAimbot = AimbotSettings
