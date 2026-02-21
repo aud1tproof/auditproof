@@ -1,105 +1,131 @@
--- // auditproof/core/PrimaryAimbot.lua (add as new file)
--- Simple silent-ish aimbot → PrimaryPart only, using mousemoverel()
--- WARNING: extremely detectable in most Roblox games (Byfron + Hyperion are aggressive)
+local Settings   = getgenv().HubSettings
+local Utils      = getgenv().HubUtils
 
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
-local Camera = workspace.CurrentCamera
+local Players           = game:GetService("Players")
+local RunService        = game:GetService("RunService")
+local UserInputService  = game:GetService("UserInputService")
+local TeamService       = game:GetService("Teams")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local LocalPlayer = Players.LocalPlayer
-local Mouse = LocalPlayer:GetMouse()
+local Camera      = workspace.CurrentCamera
 
--- Config
-local AIMBOT_ENABLED = true               -- toggle with key or UI later
-local AIM_KEY = Enum.KeyCode.Q            -- hold to aim (changed to Q)
-local SMOOTHNESS = 0.55                   -- 0.1 = instant snap, 1 = very slow
-local FOV_RADIUS = 150                    -- pixels, larger = easier to acquire
-local TEAM_CHECK = false
-local WALL_CHECK = false                   -- basic raycast visibility
-
--- Globals
-local CurrentTarget = nil
-
-local function isValidTarget(player)
-    if not player or player == LocalPlayer then return false end
-    if not player.Character or not player.Character.PrimaryPart or not player.Character:FindFirstChildOfClass("Humanoid") then return false end
-    if player.Character.Humanoid.Health <= 0 then return false end
-    
-    if TEAM_CHECK and player.Team == LocalPlayer.Team then return false end
-    
-    if WALL_CHECK then
-        local partPos = player.Character.PrimaryPart.Position
-        local ray = Ray.new(Camera.CFrame.Position, (partPos - Camera.CFrame.Position).Unit * 500)
-        local hit, pos = workspace:FindPartOnRayWithIgnoreList(ray, {LocalPlayer.Character, Camera})
-        if hit and hit:IsDescendantOf(player.Character) then
-            -- visible
-        else
-            return false
-        end
-    end
-    
-    -- FOV check (screen-space)
-    local screenPos, onScreen = Camera:WorldToViewportPoint(player.Character.PrimaryPart.Position)
-    if not onScreen then return false end
-    local mousePos = Vector2.new(Mouse.X, Mouse.Y)
-    local dist = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
-    if dist > FOV_RADIUS then return false end
-    
-    return true, dist, screenPos
-end
-
-local function findClosestTarget()
-    local closest = nil
-    local closestDist = FOV_RADIUS + 1
-    
-    for _, player in ipairs(Players:GetPlayers()) do
-        local valid, dist = isValidTarget(player)
-        if valid and dist < closestDist then
-            closest = player
-            closestDist = dist
-        end
-    end
-    
-    return closest
-end
-
--- Main loop
-RunService.RenderStepped:Connect(function(delta)
-    if not AIMBOT_ENABLED then 
-        CurrentTarget = nil
-        return 
-    end
-    
-    if UserInputService:IsKeyDown(AIM_KEY) then
-        if not CurrentTarget or not isValidTarget(CurrentTarget) then
-            CurrentTarget = findClosestTarget()
-        end
-        
-        if CurrentTarget then
-            local part = CurrentTarget.Character.PrimaryPart
-            if part then
-                local targetPos = part.Position
-                -- Very basic prediction (you can improve with velocity + ping)
-                local dist = (targetPos - Camera.CFrame.Position).Magnitude
-                local predOffset = part.Velocity * (dist / 200) * 0.033  -- rough guess
-                targetPos += predOffset
-                
-                local screenPos = Camera:WorldToViewportPoint(targetPos)
-                local mousePos = Vector2.new(Mouse.X, Mouse.Y + 36) -- gui inset hack
-                
-                local deltaX = (screenPos.X - mousePos.X)
-                local deltaY = (screenPos.Y - mousePos.Y)
-                
-                -- Apply smoothing
-                deltaX = deltaX * SMOOTHNESS
-                deltaY = deltaY * SMOOTHNESS
-                
-                mousemoverel(deltaX, deltaY)
-            end
-        end
-    else
-        CurrentTarget = nil
-    end
+workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
+    Camera = workspace.CurrentCamera
 end)
-print("[auditproof] PrimaryPart Aimbot loaded (mousemoverel) - hold Q / toggle")
+
+-- ── Config ──────────────────────────────────────────────────────────────────
+local AimbotSettings = {
+    Key         = Enum.KeyCode.Q,   -- hold to activate
+    Smoothing   = 0.15,             -- 0 = instant snap, 1 = never arrives (keep between 0.05–0.4)
+    FOV         = 200,              -- max pixel radius from screen centre to consider a target
+    TeamCheck   = true,             -- respect Settings.TeamCheck
+}
+-- ────────────────────────────────────────────────────────────────────────────
+
+local Tortoiseshell = getupvalue(require(ReplicatedStorage.TS), 1)
+local Characters    = getupvalue(Tortoiseshell.Characters.GetCharacter, 1)
+
+local function GetCharacter(Player)
+    local Char = Characters[Player]
+    if not Char or Char.Parent == nil then return end
+    return Char, Char.PrimaryPart
+end
+
+local function GetHealth(Character)
+    local H = Character.Health
+    return H.Value, H.MaxHealth.Value, H.Value > 0
+end
+
+local function GetPlayerTeam(Player)
+    for _, Team in pairs(TeamService:GetChildren()) do
+        if Team.Players:FindFirstChild(Player.Name) then
+            return Team.Name
+        end
+    end
+end
+
+local function IsEnemy(Player)
+    local t1 = GetPlayerTeam(Player)
+    local t2 = GetPlayerTeam(LocalPlayer)
+    return t2 ~= t1 or t1 == "FFA"
+end
+
+-- ── FOV circle drawing ───────────────────────────────────────────────────────
+local FOVCircle = Drawing.new("Circle")
+FOVCircle.Visible   = false
+FOVCircle.Radius    = AimbotSettings.FOV
+FOVCircle.Color     = Color3.new(1, 1, 1)
+FOVCircle.Thickness = 1
+FOVCircle.Filled    = false
+FOVCircle.NumSides  = 64
+
+-- ── Closest enemy logic ──────────────────────────────────────────────────────
+local function GetScreenCenter()
+    return Camera.ViewportSize / 2
+end
+
+local function GetBestTarget()
+    local Center     = GetScreenCenter()
+    local BestPlayer = nil
+    local BestDist   = AimbotSettings.FOV  -- must be within FOV radius
+
+    for _, Player in pairs(Players:GetPlayers()) do
+        if Player == LocalPlayer then continue end
+
+        local Enemy = IsEnemy(Player)
+        if AimbotSettings.TeamCheck and Settings.TeamCheck and not Enemy then continue end
+
+        local Char, Root = GetCharacter(Player)
+        if not Char or not Root then continue end
+
+        local _, _, Alive = GetHealth(Char)
+        if not Alive then continue end
+
+        local ScreenPos, OnScreen = Utils.WorldToScreen(Root.Position)
+        if not OnScreen then continue end
+
+        local Dist = (ScreenPos - Center).Magnitude
+        if Dist < BestDist then
+            BestDist   = Dist
+            BestPlayer = Player
+        end
+    end
+
+    return BestPlayer
+end
+
+-- ── Main loop ────────────────────────────────────────────────────────────────
+RunService.RenderStepped:Connect(function()
+    local Center = GetScreenCenter()
+
+    -- Update FOV circle position
+    FOVCircle.Position = Center
+    FOVCircle.Radius   = AimbotSettings.FOV
+
+    local Holding = UserInputService:IsKeyDown(AimbotSettings.Key)
+    FOVCircle.Visible = true  -- always show FOV ring so you can see the radius
+
+    if not Holding then return end
+
+    local Target = GetBestTarget()
+    if not Target then return end
+
+    local Char, Root = GetCharacter(Target)
+    if not Char or not Root then return end
+
+    local ScreenPos, OnScreen = Utils.WorldToScreen(Root.Position)
+    if not OnScreen then return end
+
+    -- Smooth camera toward target
+    local CurrentCF  = Camera.CFrame
+    local TargetCF   = CFrame.lookAt(CurrentCF.Position, Root.Position)
+    local Smoothed   = CurrentCF:Lerp(TargetCF, AimbotSettings.Smoothing)
+
+    Camera.CFrame    = Smoothed
+end)
+
+-- Cleanup on script destroy (optional but tidy)
+game:GetService("Players").LocalPlayer.CharacterRemoving:Connect(function()
+    FOVCircle.Visible = false
+end)
