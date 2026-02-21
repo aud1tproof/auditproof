@@ -122,7 +122,8 @@ RunService.RenderStepped:Connect(function()
     local TargetCF   = CFrame.lookAt(CurrentCF.Position, Root.Position)
     local Smoothed   = CurrentCF:Lerp(TargetCF, AimbotSettings.Smoothing)
 
-    Camera.CFrame    = Smoothed
+    local Delta = ScreenPos - Center
+    mousemoverel(Delta.X * AimbotSettings.Smoothing, Delta.Y * AimbotSettings.Smoothing)
 end)
 
 -- Cleanup on script destroy (optional but tidy)
